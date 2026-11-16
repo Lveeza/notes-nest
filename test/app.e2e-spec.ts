@@ -4,17 +4,22 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { randomUUID } from 'node:crypto';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
+  beforeAll(() => {
+    expect(process.env.DATABASE_URL).toContain('test.db'); 
+  });
+
   beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-
     app = moduleFixture.createNestApplication();
     await app.init();
+    await app.get(PrismaService).client.note.deleteMany();
   });
 
   it('/ (GET)', () => {
@@ -41,13 +46,19 @@ describe('AppController (e2e)', () => {
     expect(list.body).toEqual([created.body]);
   });
 
-  test('empty text give 400', async () => {
+  test('rejects empty or whitespace-only text with 400', async () => {
     await request(app.getHttpServer()).post('/notes').send({}).expect(400);
-    await request(app.getHttpServer()).post('/notes').send({ text: '' }).expect(400);
-    await request(app.getHttpServer()).post('/notes').send({ text: '   ' }).expect(400);
+    await request(app.getHttpServer())
+      .post('/notes')
+      .send({ text: '' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/notes')
+      .send({ text: '   ' })
+      .expect(400);
   });
 
-  test('text length allow 1-500', async () => {
+  test('accepts text of 1 to 500 characters and rejects 501', async () => {
     await request(app.getHttpServer())
       .post('/notes')
       .send({ text: 'a' })
@@ -62,32 +73,35 @@ describe('AppController (e2e)', () => {
       .expect(400);
   });
 
-  test('extra field give 400' , async () => {
+  test('rejects unknown fields with 400', async () => {
     await request(app.getHttpServer())
       .post('/notes')
       .send({ text: 'note', extra: 'field' })
       .expect(400);
   });
 
-  test('bad id gives 400' , async () => {
-    await request(app.getHttpServer())
-      .get(`/notes/not-a-uuid`)
-      .expect(400);
+  test('bad id gives 400', async () => {
+    await request(app.getHttpServer()).get(`/notes/not-a-uuid`).expect(400);
   });
-  
+
   test('can read, update and delete the second note', async () => {
-  const server = app.getHttpServer();
-  await request(server).post('/notes').send({ text: 'first' }).expect(201);
-  const second = await request(server).post('/notes').send({ text: 'second' }).expect(201);
-  const id = second.body.id;
+    const server = app.getHttpServer();
+    await request(server).post('/notes').send({ text: 'first' }).expect(201);
+    const second = await request(server)
+      .post('/notes')
+      .send({ text: 'second' })
+      .expect(201);
+    const id = second.body.id;
 
-  await request(server).get(`/notes/${id}`).expect(200);
-  await request(server).patch(`/notes/${id}`).send({ text: 'changed' }).expect(200);
-  await request(server).delete(`/notes/${id}`).expect(200);
+    await request(server).get(`/notes/${id}`).expect(200);
+    await request(server)
+      .patch(`/notes/${id}`)
+      .send({ text: 'changed' })
+      .expect(200);
+    await request(server).delete(`/notes/${id}`).expect(200);
 
-  const list = await request(server).get('/notes').expect(200);
-  expect(list.body).toHaveLength(1);
-  expect(list.body[0].text).toBe('first');
-});
-
+    const list = await request(server).get('/notes').expect(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].text).toBe('first');
+  });
 });

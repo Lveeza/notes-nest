@@ -6,5 +6,6 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    env: { DATABASE_URL: 'file:./test.db' },
   },
 });

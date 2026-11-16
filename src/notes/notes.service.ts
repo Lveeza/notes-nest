@@ -1,45 +1,58 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateNoteDto } from './dto/create-note.dto.js';
 import { UpdateNoteDto } from './dto/update-note.dto.js';
-import { randomUUID } from 'node:crypto';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../generated/prisma/client.js';
 
 @Injectable()
 export class NotesService {
-  private notes: { id: string; text: string }[] = [];
-  create(createNoteDto: CreateNoteDto) {
-    const note = { id: randomUUID(), text: createNoteDto.text };
-    this.notes.push(note);
+  constructor(private readonly prisma: PrismaService) {}
+
+  private isNotFound(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    );
+  }
+
+  async create(createNoteDto: CreateNoteDto) {
+    return await this.prisma.client.note.create({
+      data: { text: createNoteDto.text },
+    });
+  }
+
+  async findAll() {
+    return await this.prisma.client.note.findMany({ orderBy: { createdAt: 'asc' } });
+  }
+
+  async findOne(id: string) {
+    const note = await this.prisma.client.note.findUnique({ where: { id } });
+    if (!note) {
+      throw new NotFoundException('Note not found');
+    }
     return note;
   }
 
-  findAll() {
-    return [...this.notes];
-  }
-  private findIndexOrThrow(id: string): number {
-    const index = this.notes.findIndex((note) => note.id === id);
-    if (index === -1) {
-      throw new NotFoundException('Note not found');
+  async update(id: string, updateNoteDto: UpdateNoteDto) {
+    try {
+      return await this.prisma.client.note.update({
+        where: { id },
+        data: { text: updateNoteDto.text },
+      });
+    } catch (error) {
+      if (this.isNotFound(error)) throw new NotFoundException('Note not found');
+      throw error;
     }
-    return index;
   }
 
-  findOne(id: string) {
-    return this.notes[this.findIndexOrThrow(id)];
-  }
-
-  update(id: string, updateNoteDto: UpdateNoteDto) {
-    const index = this.findIndexOrThrow(id);
-    const current = this.notes[index];
-    this.notes[index] = {
-      ...current,
-      text: updateNoteDto.text ?? current.text,
-    };
-    return this.notes[index];
-  }
-
-  remove(id: string) {
-    const index = this.findIndexOrThrow(id);
-    const [removed] = this.notes.splice(index, 1);
-    return removed;
+  async remove(id: string) {
+    try {
+      return await this.prisma.client.note.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if (this.isNotFound(error)) throw new NotFoundException('Note not found');
+      throw error;
+    }
   }
 }

@@ -4,9 +4,14 @@ import { AppService } from './app.service.js';
 import { NotesModule } from './notes/notes.module.js';
 import { APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { validateEnv } from './config/env.js';
 
 @Module({
-  imports: [NotesModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    NotesModule
+  ],
   controllers: [AppController],
   providers: [
   AppService,
