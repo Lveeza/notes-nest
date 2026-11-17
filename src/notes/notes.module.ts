@@ -4,7 +4,7 @@ import { NotesController } from './notes.controller.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 
 @Module({
-   imports: [PrismaModule],
+  imports: [PrismaModule],
   controllers: [NotesController],
   providers: [NotesService],
 })

@@ -7,6 +7,7 @@ import { AppService } from './app.service.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { validateEnv } from './config/env.js';
 import { NotesModule } from './notes/notes.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { NotesModule } from './notes/notes.module.js';
       },
     }),
     NotesModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [
