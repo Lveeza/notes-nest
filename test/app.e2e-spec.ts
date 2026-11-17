@@ -10,7 +10,7 @@ describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeAll(() => {
-    expect(process.env.DATABASE_URL).toContain('test.db'); 
+    expect(process.env.DATABASE_URL).toContain('test.db');
   });
 
   beforeEach(async () => {
@@ -103,5 +103,27 @@ describe('AppController (e2e)', () => {
     const list = await request(server).get('/notes').expect(200);
     expect(list.body).toHaveLength(1);
     expect(list.body[0].text).toBe('first');
+  });
+
+  test.each([
+    ['an empty body', {}],
+    ['empty text', { text: '' }],
+    ['whitespace-only text', { text: '   ' }],
+  ])('PATCH rejects %s with 400', async (_label, body) => {
+    const server = app.getHttpServer();
+    const created = await request(server)
+      .post('/notes')
+      .send({ text: 'first' })
+      .expect(201);
+
+    await request(server)
+      .patch(`/notes/${created.body.id}`)
+      .send(body)
+      .expect(400);
+
+    const after = await request(server)
+      .get(`/notes/${created.body.id}`)
+      .expect(200);
+    expect(after.body.text).toBe('first');
   });
 });
