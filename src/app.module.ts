@@ -1,21 +1,33 @@
-import { Module } from '@nestjs/common';
+import { Module, ValidationPipe } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
-import { NotesModule } from './notes/notes.module.js';
-import { APP_PIPE } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { validateEnv } from './config/env.js';
+import { NotesModule } from './notes/notes.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
-    NotesModule
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+        redact: ['req.headers.authorization', 'req.headers.cookie'], // never log secrets
+        transport: process.env.NODE_ENV === 'production' ? undefined : { target: 'pino-pretty' },
+      },
+    }),
+    NotesModule,
   ],
   controllers: [AppController],
   providers: [
-  AppService,
-  { provide: APP_PIPE, useValue: new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }) },
-],
+    AppService,
+    {
+      provide: APP_PIPE,
+      useValue: new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
 })
 export class AppModule {}

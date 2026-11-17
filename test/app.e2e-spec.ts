@@ -5,6 +5,7 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { NotesService } from '../src/notes/notes.service.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -126,4 +127,42 @@ describe('AppController (e2e)', () => {
       .expect(200);
     expect(after.body.text).toBe('first');
   });
+
+  test('body has statusCode: 404, a message, and a path' , async() =>{
+    await request(app.getHttpServer()).get(`/notes/${randomUUID()}`).expect(404);
+  });
+
+   test('validation errors return message as an array', async () => {
+  const res = await request(app.getHttpServer())
+    .post('/notes')
+    .send({ text: '', extra: 1 })
+    .expect(400);
+
+  expect(res.body.statusCode).toBe(400);
+  expect(Array.isArray(res.body.message)).toBe(true);
 });
+
+test('500 errors do not leak internal details', async () => {
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(NotesService)
+    .useValue({
+      findAll: () => {
+        throw new Error('secret db password');
+      },
+    })
+    .compile();
+
+  const crashApp = moduleRef.createNestApplication();
+  await crashApp.init();
+
+  const res = await request(crashApp.getHttpServer()).get('/notes').expect(500);
+
+  expect(res.body.message).toBe('Internal server error');
+  expect(JSON.stringify(res.body)).not.toContain('secret db password');
+
+  await crashApp.close();
+});
+
+});
+
+
