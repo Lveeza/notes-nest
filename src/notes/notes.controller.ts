@@ -1,18 +1,19 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
-import { NotesService } from './notes.service.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CreateNoteDto } from './dto/create-note.dto.js';
 import { UpdateNoteDto } from './dto/update-note.dto.js';
-import { ParseUUIDPipe } from '@nestjs/common';
-import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { NotesService } from './notes.service.js';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notes')
@@ -20,30 +21,37 @@ export class NotesController {
   constructor(private readonly notesService: NotesService) {}
 
   @Post()
-  create(@Body() createNoteDto: CreateNoteDto) {
-    return this.notesService.create(createNoteDto);
+  create(@CurrentUser() user: { id: string }, @Body() dto: CreateNoteDto) {
+    return this.notesService.create(user.id, dto);
   }
 
   @Get()
-  findAll() {
-    return this.notesService.findAll();
+  findAll(@CurrentUser() user: { id: string }) {
+    return this.notesService.findAll(user.id);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notesService.findOne(id);
+  findOne(
+    @CurrentUser() user: { id: string },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.notesService.findOne(user.id, id);
   }
 
   @Patch(':id')
   update(
+    @CurrentUser() user: { id: string },
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateNoteDto: UpdateNoteDto,
+    @Body() dto: UpdateNoteDto,
   ) {
-    return this.notesService.update(id, updateNoteDto);
+    return this.notesService.update(user.id, id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notesService.remove(id);
+  remove(
+    @CurrentUser() user: { id: string },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.notesService.remove(user.id, id);
   }
 }

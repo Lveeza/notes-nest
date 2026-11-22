@@ -6,7 +6,7 @@ import { NotesService } from './notes.service.js';
 
 describe('NotesService', () => {
   let service: NotesService;
-  const note = { findUnique: vi.fn() };
+  const note = { findFirst: vi.fn() };
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -20,15 +20,24 @@ describe('NotesService', () => {
   });
 
   test('findOne throws NotFoundException when the note does not exist', async () => {
-    note.findUnique.mockResolvedValue(null);
-    await expect(service.findOne('missing')).rejects.toThrow(NotFoundException);
+    note.findFirst.mockResolvedValue(null);
+    await expect(service.findOne('owner-1', 'missing')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   test('findOne returns the note when it exists', async () => {
-    const saved = { id: '1', text: 'hi', createdAt: new Date() };
-    note.findUnique.mockResolvedValue(saved);
+    const saved = {
+      id: '1',
+      text: 'hi',
+      ownerId: 'owner-1',
+      createdAt: new Date(),
+    };
+    note.findFirst.mockResolvedValue(saved);
 
-    await expect(service.findOne('1')).resolves.toEqual(saved);
-    expect(note.findUnique).toHaveBeenCalledWith({ where: { id: '1' } });
+    await expect(service.findOne('owner-1', '1')).resolves.toEqual(saved);
+    expect(note.findFirst).toHaveBeenCalledWith({
+      where: { id: '1', ownerId: 'owner-1' },
+    });
   });
 });

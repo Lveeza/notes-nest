@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateNoteDto } from './dto/create-note.dto.js';
 import { UpdateNoteDto } from './dto/update-note.dto.js';
-import { PrismaService } from '../prisma/prisma.service.js';
-import { Prisma } from '../generated/prisma/client.js';
 
 @Injectable()
 export class NotesService {
@@ -15,29 +15,34 @@ export class NotesService {
     );
   }
 
-  async create(createNoteDto: CreateNoteDto) {
+  async create(ownerId: string, dto: CreateNoteDto) {
     return await this.prisma.client.note.create({
-      data: { text: createNoteDto.text },
+      data: { text: dto.text, ownerId },
     });
   }
 
-  async findAll() {
-    return await this.prisma.client.note.findMany({ orderBy: { createdAt: 'asc' } });
+  async findAll(ownerId: string) {
+    return await this.prisma.client.note.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
-  async findOne(id: string) {
-    const note = await this.prisma.client.note.findUnique({ where: { id } });
+  async findOne(ownerId: string, id: string) {
+    const note = await this.prisma.client.note.findFirst({
+      where: { id, ownerId },
+    });
     if (!note) {
       throw new NotFoundException('Note not found');
     }
     return note;
   }
 
-  async update(id: string, updateNoteDto: UpdateNoteDto) {
+  async update(ownerId: string, id: string, dto: UpdateNoteDto) {
     try {
       return await this.prisma.client.note.update({
-        where: { id },
-        data: { text: updateNoteDto.text },
+        where: { id, ownerId },
+        data: { text: dto.text },
       });
     } catch (error) {
       if (this.isNotFound(error)) throw new NotFoundException('Note not found');
@@ -45,11 +50,9 @@ export class NotesService {
     }
   }
 
-  async remove(id: string) {
+  async remove(ownerId: string, id: string) {
     try {
-      return await this.prisma.client.note.delete({
-        where: { id },
-      });
+      return await this.prisma.client.note.delete({ where: { id, ownerId } });
     } catch (error) {
       if (this.isNotFound(error)) throw new NotFoundException('Note not found');
       throw error;

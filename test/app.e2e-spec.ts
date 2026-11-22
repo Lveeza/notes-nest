@@ -378,5 +378,109 @@ describe('AppController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
     });
+    describe('note ownership', () => {
+      test("a user cannot read, change or delete another user's note", async () => {
+        const alice = await authHeader(app, 'alice@example.com');
+        const bob = await authHeader(app, 'bob@example.com');
+        const created = await request(app.getHttpServer())
+          .post('/notes')
+          .set(alice)
+          .send({ text: 'private' })
+          .expect(201);
+        const id = created.body.id;
+
+        await request(app.getHttpServer())
+          .get(`/notes/${id}`)
+          .set(bob)
+          .expect(404);
+        await request(app.getHttpServer())
+          .patch(`/notes/${id}`)
+          .set(bob)
+          .send({ text: 'hacked' })
+          .expect(404);
+        await request(app.getHttpServer())
+          .delete(`/notes/${id}`)
+          .set(bob)
+          .expect(404);
+
+        const bobList = await request(app.getHttpServer())
+          .get('/notes')
+          .set(bob)
+          .expect(200);
+        expect(bobList.body).toHaveLength(0);
+
+        const aliceNote = await request(app.getHttpServer())
+          .get(`/notes/${id}`)
+          .set(alice)
+          .expect(200);
+        expect(aliceNote.body.text).toBe('private'); // unchanged
+      });
+    });
+  });
+  describe('note ownership', () => {
+    async function setup() {
+      const server = app.getHttpServer();
+      const alice = await authHeader(app, 'alice@example.com');
+      const bob = await authHeader(app, 'bob@example.com');
+      const created = await request(server)
+        .post('/notes')
+        .set(alice)
+        .send({ text: 'private' })
+        .expect(201);
+      return { server, alice, bob, id: created.body.id as string };
+    }
+
+    test.each([
+      [
+        'read',
+        (s: any, h: any, id: string) => request(s).get(`/notes/${id}`).set(h),
+      ],
+      [
+        'change',
+        (s: any, h: any, id: string) =>
+          request(s).patch(`/notes/${id}`).set(h).send({ text: 'hacked' }),
+      ],
+      [
+        'delete',
+        (s: any, h: any, id: string) =>
+          request(s).delete(`/notes/${id}`).set(h),
+      ],
+    ])(
+      "another user cannot %s someone else's note",
+      async (_action, attempt) => {
+        const { server, alice, bob, id } = await setup();
+
+        await attempt(server, bob, id).expect(404);
+
+        // the owner's note is untouched
+        const mine = await request(server)
+          .get(`/notes/${id}`)
+          .set(alice)
+          .expect(200);
+        expect(mine.body.text).toBe('private');
+      },
+    );
+
+    test('each user lists only their own notes', async () => {
+      const { server, alice, bob } = await setup();
+
+      const bobList = await request(server).get('/notes').set(bob).expect(200);
+      expect(bobList.body).toHaveLength(0);
+
+      const aliceList = await request(server)
+        .get('/notes')
+        .set(alice)
+        .expect(200);
+      expect(aliceList.body).toHaveLength(1);
+    });
+
+    test('the owner is taken from the token, not from the body', async () => {
+      const { server, alice } = await setup();
+      await request(server)
+        .post('/notes')
+        .set(alice)
+        .send({ text: 'x', ownerId: 'someone-else' })
+        .expect(400);
+    });
   });
 });
