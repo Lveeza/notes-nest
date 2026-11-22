@@ -1,12 +1,23 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { hash } from 'argon2';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { hash, verify } from 'argon2';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { LoginDto } from './dto/login.dto.js';
+
+const DUMMY_HASH = await hash('dummy-password');
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+  ) {}
 
   private isDuplicateEmail(error: unknown): boolean {
     return (
@@ -28,5 +39,15 @@ export class AuthService {
       }
       throw error;
     }
+  }
+  async login(dto: LoginDto): Promise<{ token: string }> {
+    const user = await this.prisma.client.user.findUnique({
+      where: { email: dto.email },
+    });
+    const ok = await verify(user?.passwordHash ?? DUMMY_HASH, dto.password);
+    if (!user || !ok) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    return { token: await this.jwt.signAsync({ sub: user.id }) };
   }
 }
