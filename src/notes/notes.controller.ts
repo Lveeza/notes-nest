@@ -14,6 +14,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CreateNoteDto } from './dto/create-note.dto.js';
 import { UpdateNoteDto } from './dto/update-note.dto.js';
 import { NotesService } from './notes.service.js';
+import { Query } from '@nestjs/common';
+import { ListNotesQueryDto } from './dto/list-notes-query.dto.js';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notes')
@@ -26,8 +28,11 @@ export class NotesController {
   }
 
   @Get()
-  findAll(@CurrentUser() user: { id: string }) {
-    return this.notesService.findAll(user.id);
+  findAll(
+    @CurrentUser() user: { id: string },
+    @Query() query: ListNotesQueryDto,
+  ) {
+    return this.notesService.findAll(user.id, query);
   }
 
   @Get(':id')

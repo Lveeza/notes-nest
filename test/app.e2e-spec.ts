@@ -70,7 +70,7 @@ describe('AppController (e2e)', () => {
       .get('/notes')
       .set(auth)
       .expect(200);
-    expect(list.body).toEqual([created.body]);
+    expect(list.body.data).toEqual([created.body]);
   });
 
   test('rejects empty or whitespace-only text with 400', async () => {
@@ -144,8 +144,8 @@ describe('AppController (e2e)', () => {
     await request(server).delete(`/notes/${id}`).set(auth).expect(200);
 
     const list = await request(server).get('/notes').set(auth).expect(200);
-    expect(list.body).toHaveLength(1);
-    expect(list.body[0].text).toBe('first');
+    expect(list.body.data).toHaveLength(1);
+    expect(list.body.data[0].text).toBe('first');
   });
 
   test.each([
@@ -407,7 +407,7 @@ describe('AppController (e2e)', () => {
           .get('/notes')
           .set(bob)
           .expect(200);
-        expect(bobList.body).toHaveLength(0);
+        expect(bobList.body.data).toHaveLength(0);
 
         const aliceNote = await request(app.getHttpServer())
           .get(`/notes/${id}`)
@@ -465,13 +465,13 @@ describe('AppController (e2e)', () => {
       const { server, alice, bob } = await setup();
 
       const bobList = await request(server).get('/notes').set(bob).expect(200);
-      expect(bobList.body).toHaveLength(0);
+      expect(bobList.body.data).toHaveLength(0);
 
       const aliceList = await request(server)
         .get('/notes')
         .set(alice)
         .expect(200);
-      expect(aliceList.body).toHaveLength(1);
+      expect(aliceList.body.data).toHaveLength(1);
     });
 
     test('the owner is taken from the token, not from the body', async () => {
@@ -481,6 +481,286 @@ describe('AppController (e2e)', () => {
         .set(alice)
         .send({ text: 'x', ownerId: 'someone-else' })
         .expect(400);
+    });
+  });
+  describe('pagination and search', () => {
+    async function seed(auth: Record<string, string>, texts: string[]) {
+      const server = app.getHttpServer();
+      for (const text of texts) {
+        await request(server)
+          .post('/notes')
+          .set(auth)
+          .send({ text })
+          .expect(201);
+      }
+    }
+
+    test('returns data, total, limit and offset', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?limit=2&offset=0')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.total).toBe(5);
+      expect(res.body.limit).toBe(2);
+      expect(res.body.offset).toBe(0);
+    });
+
+    test('the last page has the remaining notes', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?limit=2&offset=4')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+    });
+
+    test('pages have no overlap and no gaps', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+      const server = app.getHttpServer();
+
+      const ids: string[] = [];
+      for (const offset of [0, 2, 4]) {
+        const page = await request(server)
+          .get(`/notes?limit=2&offset=${offset}`)
+          .set(auth)
+          .expect(200);
+        ids.push(...page.body.data.map((n: { id: string }) => n.id));
+      }
+
+      const all = await request(server)
+        .get('/notes?limit=100')
+        .set(auth)
+        .expect(200);
+      expect(new Set(ids).size).toBe(5); // no duplicates
+      expect(ids).toEqual(all.body.data.map((n: { id: string }) => n.id)); // same order, nothing missing
+    });
+
+    test('uses a default limit of 20', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(
+        auth,
+        Array.from({ length: 21 }, (_, i) => `note ${i}`),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/notes')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(20);
+      expect(res.body.total).toBe(21);
+    });
+
+    test('q returns only notes that contain the text', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['buy milk', 'call mom', 'oat milk']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?q=milk')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.total).toBe(2);
+      expect(res.body.data.map((n: { text: string }) => n.text).sort()).toEqual(
+        ['buy milk', 'oat milk'],
+      );
+    });
+
+    test('q treats % as a normal character', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['100% done', '100 apples']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?q=%25')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data.map((n: { text: string }) => n.text)).toEqual([
+        '100% done',
+      ]);
+    });
+
+    test.each([
+      ['limit=0'],
+      ['limit=101'],
+      ['limit=abc'],
+      ['offset=-1'],
+      ['offset=abc'],
+      ['extra=1'],
+    ])('rejects bad query ?%s with 400', async (query) => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await request(app.getHttpServer())
+        .get(`/notes?${query}`)
+        .set(auth)
+        .expect(400);
+    });
+
+    test("a user's list and total never include other users' notes", async () => {
+      const alice = await authHeader(app, 'alice@example.com');
+      const bob = await authHeader(app, 'bob@example.com');
+      await seed(alice, ['a1', 'a2', 'a3']);
+
+      const bobList = await request(app.getHttpServer())
+        .get('/notes')
+        .set(bob)
+        .expect(200);
+      expect(bobList.body.data).toEqual([]);
+      expect(bobList.body.total).toBe(0); // a leaked total would reveal how many notes others have
+
+      const bobSearch = await request(app.getHttpServer())
+        .get('/notes?q=a')
+        .set(bob)
+        .expect(200);
+      expect(bobSearch.body.total).toBe(0);
+    });
+  });
+  describe('pagination and search', () => {
+    async function seed(auth: Record<string, string>, texts: string[]) {
+      const server = app.getHttpServer();
+      for (const text of texts) {
+        await request(server)
+          .post('/notes')
+          .set(auth)
+          .send({ text })
+          .expect(201);
+      }
+    }
+
+    test('returns data, total, limit and offset', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?limit=2&offset=0')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.total).toBe(5);
+      expect(res.body.limit).toBe(2);
+      expect(res.body.offset).toBe(0);
+    });
+
+    test('the last page has the remaining notes', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?limit=2&offset=4')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+    });
+
+    test('pages have no overlap and no gaps', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['n1', 'n2', 'n3', 'n4', 'n5']);
+      const server = app.getHttpServer();
+
+      const ids: string[] = [];
+      for (const offset of [0, 2, 4]) {
+        const page = await request(server)
+          .get(`/notes?limit=2&offset=${offset}`)
+          .set(auth)
+          .expect(200);
+        ids.push(...page.body.data.map((n: { id: string }) => n.id));
+      }
+
+      const all = await request(server)
+        .get('/notes?limit=100')
+        .set(auth)
+        .expect(200);
+      expect(new Set(ids).size).toBe(5); // no duplicates
+      expect(ids).toEqual(all.body.data.map((n: { id: string }) => n.id)); // same order, nothing missing
+    });
+
+    test('uses a default limit of 20', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(
+        auth,
+        Array.from({ length: 21 }, (_, i) => `note ${i}`),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/notes')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(20);
+      expect(res.body.total).toBe(21);
+    });
+
+    test('q returns only notes that contain the text', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['buy milk', 'call mom', 'oat milk']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?q=milk')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.total).toBe(2);
+      expect(res.body.data.map((n: { text: string }) => n.text).sort()).toEqual(
+        ['buy milk', 'oat milk'],
+      );
+    });
+
+    test('q treats % as a normal character', async () => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await seed(auth, ['100% done', '100 apples']);
+
+      const res = await request(app.getHttpServer())
+        .get('/notes?q=%25')
+        .set(auth)
+        .expect(200);
+
+      expect(res.body.data.map((n: { text: string }) => n.text)).toEqual([
+        '100% done',
+      ]);
+    });
+
+    test.each([
+      ['limit=0'],
+      ['limit=101'],
+      ['limit=abc'],
+      ['offset=-1'],
+      ['offset=abc'],
+      ['extra=1'],
+    ])('rejects bad query ?%s with 400', async (query) => {
+      const auth = await authHeader(app, 'alice@example.com');
+      await request(app.getHttpServer())
+        .get(`/notes?${query}`)
+        .set(auth)
+        .expect(400);
+    });
+
+    test("a user's list and total never include other users' notes", async () => {
+      const alice = await authHeader(app, 'alice@example.com');
+      const bob = await authHeader(app, 'bob@example.com');
+      await seed(alice, ['a1', 'a2', 'a3']);
+
+      const bobList = await request(app.getHttpServer())
+        .get('/notes')
+        .set(bob)
+        .expect(200);
+      expect(bobList.body.data).toEqual([]);
+      expect(bobList.body.total).toBe(0); // a leaked total would reveal how many notes others have
+
+      const bobSearch = await request(app.getHttpServer())
+        .get('/notes?q=a')
+        .set(bob)
+        .expect(200);
+      expect(bobSearch.body.total).toBe(0);
     });
   });
 });
