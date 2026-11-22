@@ -9,6 +9,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: 'file:./test.db',
       JWT_SECRET: 'test-secret-test-secret-test-secret-1234',
+      CORS_ORIGINS: 'http://localhost:5173',
     },
   },
 });

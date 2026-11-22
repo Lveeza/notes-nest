@@ -10,6 +10,16 @@ describe('validateEnv', () => {
     expect(env.PORT).toBe(3000);
   });
 
+  test('splits CORS_ORIGINS into a list, and defaults to an empty list', () => {
+    const base = { DATABASE_URL: 'file:./dev.db', JWT_SECRET: 'x'.repeat(32) };
+
+    expect(
+      validateEnv({ ...base, CORS_ORIGINS: 'http://a.com, http://b.com' })
+        .CORS_ORIGINS,
+    ).toEqual(['http://a.com', 'http://b.com']);
+    expect(validateEnv(base).CORS_ORIGINS).toEqual([]);
+  });
+
   const secret = 'x'.repeat(32);
 
   test.each([
