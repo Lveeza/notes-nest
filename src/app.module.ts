@@ -8,6 +8,8 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { validateEnv } from './config/env.js';
 import { NotesModule } from './notes/notes.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -16,20 +18,29 @@ import { AuthModule } from './auth/auth.module.js';
       pinoHttp: {
         level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
         redact: ['req.headers.authorization', 'req.headers.cookie'], // never log secrets
-        transport: process.env.NODE_ENV === 'production' ? undefined : { target: 'pino-pretty' },
+        transport:
+          process.env.NODE_ENV === 'production'
+            ? undefined
+            : { target: 'pino-pretty' },
       },
     }),
     NotesModule,
     AuthModule,
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_PIPE,
-      useValue: new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+      useValue: new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
     },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
