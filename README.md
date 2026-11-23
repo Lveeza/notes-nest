@@ -21,7 +21,7 @@ NestJS, TypeScript, Prisma 7 (SQLite), Vitest, Supertest, Docker, GitHub Actions
 ## Run it
 
 ```bash
-git clone https://github.com/<your-username>/notes-nest.git
+git clone https://github.com/Lveeza/notes-nest.git
 cd notes-nest
 npm install
 cp .env.example .env        # then set JWT_SECRET (32+ characters)
