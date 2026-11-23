@@ -1,132 +1,116 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Notes API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A REST API built with NestJS, Prisma, and SQLite. Users register, log in, and manage their own private notes.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Features
 
-## Description
+- JWT authentication with argon2 password hashing
+- Per-user ownership: a user can only read, change, or delete their own notes
+- Input validation (DTOs) that rejects unknown fields
+- Pagination and safe text search
+- Security: Helmet headers, CORS allow-list, rate limiting
+- Structured logs (pino) with secrets hidden
+- One error format for all failures, and no internal details in 500 responses
+- Unit tests (Vitest) and end-to-end tests (Supertest) on a separate test database
+- Swagger docs, Docker image, and GitHub Actions CI
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Tech stack
 
-## Project setup
+NestJS, TypeScript, Prisma 7 (SQLite), Vitest, Supertest, Docker, GitHub Actions
+
+## Run it
 
 ```bash
-$ npm install
+git clone https://github.com/<your-username>/notes-nest.git
+cd notes-nest
+npm install
+cp .env.example .env        # then set JWT_SECRET (32+ characters)
+npx prisma migrate dev
+npx prisma generate
+npm run start:dev
 ```
 
-## Compile and run the project
+The API runs at `http://localhost:3000`. Swagger docs are at `http://localhost:3000/docs` (not available when `NODE_ENV=production`).
+
+## Environment variables
+
+| Name           | Required | Description                                                       |
+| -------------- | -------- | ----------------------------------------------------------------- |
+| `DATABASE_URL` | yes      | SQLite file, for example `file:./dev.db`                          |
+| `JWT_SECRET`   | yes      | At least 32 characters. The app refuses to start without it       |
+| `PORT`         | no       | Default `3000`                                                    |
+| `CORS_ORIGINS` | no       | Comma-separated list of allowed browser origins. Empty means none |
+
+The app checks these values at startup and stops with a clear message if one is wrong.
+
+## API
+
+| Method | Path             | Auth | Description                            |
+| ------ | ---------------- | ---- | -------------------------------------- |
+| POST   | `/auth/register` | no   | Create a user. Returns `{ id, email }` |
+| POST   | `/auth/login`    | no   | Returns `{ token }`                    |
+| POST   | `/notes`         | yes  | Create a note                          |
+| GET    | `/notes`         | yes  | List your notes                        |
+| GET    | `/notes/:id`     | yes  | Get one of your notes                  |
+| PATCH  | `/notes/:id`     | yes  | Change the text of one of your notes   |
+| DELETE | `/notes/:id`     | yes  | Delete one of your notes               |
+
+Protected routes need the header `Authorization: Bearer <token>`.
+
+**List query parameters** (`GET /notes`):
+
+| Name     | Default | Rules                                                                |
+| -------- | ------- | -------------------------------------------------------------------- |
+| `limit`  | 20      | 1 to 100                                                             |
+| `offset` | 0       | 0 or more                                                            |
+| `q`      | none    | Text search, up to 100 characters. `%` and `_` are normal characters |
+
+Response: `{ "data": [...], "total": 42, "limit": 20, "offset": 0 }`
+
+**Error format** (all errors):
+
+```json
+{
+  "statusCode": 404,
+  "message": "Note not found",
+  "path": "/notes/...",
+  "timestamp": "..."
+}
+```
+
+**Rate limits:** 100 requests per minute per IP, and 10 per minute on `/auth/*`.
+
+## Test it
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm test            # unit tests
+npm run test:e2e    # end-to-end tests (uses test.db, never dev.db)
 ```
 
-## Run tests
+## Docker
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker build -t notes-nest .
+docker run -p 3000:3000 \
+  -e DATABASE_URL=file:/data/notes.db \
+  -e JWT_SECRET=<32+ characters> \
+  -v notes-data:/data \
+  notes-nest
 ```
 
-## Deployment
+The container runs database migrations at startup and keeps the SQLite file in the `notes-data` volume. It stops cleanly on `docker stop`.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Design decisions
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
-
-```bash
-$ npx @nestjs/observe link
-```
-
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
-
-Or do it by hand:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+- **404, not 403, for other users' notes.** A 403 would tell an attacker that the note exists.
+- **The owner comes from the signed token, never from the request body.** A client can lie in a body, but cannot fake a signed token. Every query also filters by `ownerId`.
+- **Same 401 for a wrong password and an unknown email.** The login also hashes a dummy password for unknown emails, so response time does not reveal which emails exist.
+- **Separate test database.** End-to-end tests never touch development data, and a guard in the tests checks that they use `test.db`.
+- **Validation and the error filter live in `AppModule`, not `main.ts`.** Tests build the app from `AppModule`, so tests and production behave the same.
+- **500 errors never show details to the client.** Only errors we throw on purpose show their message. Everything else becomes `Internal server error`, and the real error goes to the log.
+- **Search uses a plain substring match.** SQL `LIKE` treats `%` and `_` as wildcards, so a search for `%` matched every note. A test found that bug.
+- **Config is checked at startup.** A weak or missing `JWT_SECRET` stops the app before it serves any request.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+MIT
